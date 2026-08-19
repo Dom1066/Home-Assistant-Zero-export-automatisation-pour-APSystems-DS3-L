@@ -3,15 +3,7 @@ alias: >-
   consommateur
 description: >
   Modulation de la puissance des onduleurs avec priorité au pv-routeur quand
-  l'eau est froide, et gestion des pics de gros consommateurs. [Version corrigée
-  v2 : hystérésis sur force_max_power, correction du délai sur is_maintien_now,
-  suppression de la variable inutilisée router_capacity_left, seuils
-  gros-consommateur pilotés par input_number, garde trigger.id sur la détection,
-  ET passage du OR au AND entre p_grid_corrige_lisse et p_grid_corrige_instant
-  pour filtrer les pics courts sans rater les vrais gros consommateurs, avec
-  réduction du for de 40s à 8s sur le trigger pic_instant. Renommage de
-  currents/total_current en consignes_onduleurs/consigne_totale pour refléter
-  qu'il s'agit des consignes de puissance actuelles, pas de mesures de courant.]
+  l'eau est froide, et gestion des pics de gros consommateurs.
 triggers:
   - trigger: time_pattern
     seconds: /30
@@ -57,8 +49,10 @@ actions:
       - if:
           - condition: template
             value_template: |-
-              {{ (trigger.id == 'pic_instant' and p_grid_corrige_instant > seuil_gros_conso)
-                 or (is_state('input_boolean.gros_consommateur_detecte', 'on') and is_pic_actuel) }}
+              {{ (trigger.id == 'pic_instant'
+                  and states('p_grid_corrige_instant') | float(0) > states('seuil_gros_conso') | float(0)
+                  and states('p_grid_corrige_lisse') | float(0) > states('seuil_gros_conso') | float(0))
+                or (is_state('input_boolean.gros_consommateur_detecte', 'on') and is_pic_actuel) }}
         then:
           - action: timer.start
             target:
@@ -118,9 +112,9 @@ mode: restart
 max_exceeded: silent
 variables:
   entities:
-    - number.inverter_703000387xx1_maxpwr
-    - number.inverter_703000390xx2_maxpwr
-    - number.inverter_703000387xx3_maxpwr
+    - number.inverter_703000387398_maxpwr
+    - number.inverter_703000390009_maxpwr
+    - number.inverter_703000387936_maxpwr
   nb_inv: "{{ entities | length }}"
   sorties_par_mppt: 2
   pmin: 20
@@ -133,9 +127,8 @@ variables:
   pvrouter_power: "{{ states('sensor.pvrouter_1370_routed') | float(0) }}"
   p_grid_corrige: "{{ p_grid_instant - pvrouter_power - talon_conso_maison }}"
   p_grid_lisse: >-
-    {{
-    states('sensor.entree_pvrouter_1370_power_lissee_60s')
-    | float(p_grid_instant) }}
+    {{ states('sensor.entree_pvrouter_1370_power_lissee_60s') |
+    float(p_grid_instant) }}
   p_grid_corrige_lisse: "{{ p_grid_lisse - pvrouter_power - talon_conso_maison }}"
   p_grid_corrige_instant: "{{ p_grid_instant - pvrouter_power - talon_conso_maison }}"
   consignes_onduleurs: "{{ entities | map('states') | map('float', 0) | list }}"
@@ -172,7 +165,7 @@ variables:
     marge_baisse)) }}
   marge_irradiance: 30
   irradiance_limite: "{{ consigne_totale > (production_reelle_totale + marge_irradiance) }}"
-  seuil_test_periodique: 2
+  seuil_test_periodique: 1
   derniere_maj_onduleurs: >-
     {{ states.number | selectattr('entity_id', 'in', entities) |
     map(attribute='last_changed') | list | max }}
