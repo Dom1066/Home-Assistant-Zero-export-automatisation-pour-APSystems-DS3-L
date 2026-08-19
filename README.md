@@ -1,4 +1,4 @@
-# Zero export — Pilotage micro-onduleurs APSystems DS3-L
+# Zero export - Pilotage micro-onduleurs APSystems DS3-L
 
 Automatisation Home Assistant pour piloter la puissance de sortie de trois micro-onduleurs afin de minimiser l'export réseau (zéro injection), avec priorité au chauffe-eau piloté par un pv-routeur, et une détection des gros consommateurs pour éviter les à-coups de régulation.
 
