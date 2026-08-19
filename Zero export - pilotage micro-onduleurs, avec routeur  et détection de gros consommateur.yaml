@@ -1,0 +1,231 @@
+alias: >-
+  Zero export - pilotage micro-onduleurs, avec routeur et détection de gros
+  consommateur
+description: >
+  Modulation de la puissance des onduleurs avec priorité au pv-routeur quand
+  l'eau est froide, et gestion des pics de gros consommateurs. [Version corrigée
+  v2 : hystérésis sur force_max_power, correction du délai sur is_maintien_now,
+  suppression de la variable inutilisée router_capacity_left, seuils
+  gros-consommateur pilotés par input_number, garde trigger.id sur la détection,
+  ET passage du OR au AND entre p_grid_corrige_lisse et p_grid_corrige_instant
+  pour filtrer les pics courts sans rater les vrais gros consommateurs, avec
+  réduction du for de 40s à 8s sur le trigger pic_instant. Renommage de
+  currents/total_current en consignes_onduleurs/consigne_totale pour refléter
+  qu'il s'agit des consignes de puissance actuelles, pas de mesures de courant.]
+triggers:
+  - trigger: time_pattern
+    seconds: /30
+  - trigger: template
+    value_template: |-
+      {{ (states('sensor.pvrouter_1370_power') | float(0)
+          - states('sensor.pvrouter_1370_routed') | float(0)
+          - states('input_number.talon_conso_maison') | float(200))
+         > states('input_number.seuil_gros_conso') | float(750) }}
+    for: "00:00:08"
+    id: pic_instant
+  - trigger: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.gros_consommateur
+    id: timer_expire
+actions:
+  - if:
+      - condition: trigger
+        id: timer_expire
+    then:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.gros_consommateur_detecte
+  - if:
+      - condition: template
+        value_template: "{{ force_max_power }}"
+    then:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.force_max_power_actif
+    else:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.force_max_power_actif
+  - if:
+      - condition: template
+        value_template: >
+          {{ states('sensor.pvrouter_1370_power') not in
+          ['unknown','unavailable',none]
+             and states('sensor.shelly_production_channel_1_power') not in ['unknown','unavailable',none] }}
+    then:
+      - if:
+          - condition: template
+            value_template: |-
+              {{ (trigger.id == 'pic_instant' and p_grid_corrige_instant > seuil_gros_conso)
+                 or (is_state('input_boolean.gros_consommateur_detecte', 'on') and is_pic_actuel) }}
+        then:
+          - action: timer.start
+            target:
+              entity_id: timer.gros_consommateur
+            data:
+              duration: "00:04:10"
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.gros_consommateur_detecte
+      - if:
+          - condition: template
+            value_template: "{{ production_reelle_totale > production_reference }}"
+        then:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.pv_reference_baisse
+            data:
+              value: "{{ production_reelle_totale }}"
+      - if:
+          - condition: template
+            value_template: |-
+              {% if pas_de_consigne_fin_journee or irradiance_insuffisante %}
+                false
+              {% elif mode_eau_froide_actif %}
+                {{ force_max_power or ((target_routeur - pvrouter_power) | abs > bande_routeur) }}
+              {% elif production_en_baisse %}
+                {{ p_grid_instant < bande_grid_basse or p_grid_instant > bande_grid_haute or force_max_power }}
+              {% else %}
+                {{ (production_reelle_totale >= 30) or force_max_power or (p_grid_instant < 0) }}
+              {% endif %}
+        then:
+          - repeat:
+              for_each: "{{ entities }}"
+              sequence:
+                - variables:
+                    current_value: "{{ states(repeat.item) | float(0) }}"
+                    target_value: "{{ per_inverter | float(0) }}"
+                    delta: "{{ target_value - current_value }}"
+                    delta_limited: |
+                      {% set pm = pas_max_adapt | float(60) %}
+                      {{ [ [ delta, -pm ] | max, pm ] | min }}
+                    calculated_value: "{{ (current_value + delta_limited) | round(0) }}"
+                    new_value: "{{ [ [ calculated_value, pmin ] | max, pmax ] | min }}"
+                - if:
+                    - condition: template
+                      value_template: "{{ new_value != (current_value | round(0)) }}"
+                  then:
+                    - action: number.set_value
+                      target:
+                        entity_id: "{{ repeat.item }}"
+                      data:
+                        value: "{{ new_value }}"
+                    - action: counter.increment
+                      target:
+                        entity_id: counter.commandes_onduleurs_jour
+mode: restart
+max_exceeded: silent
+variables:
+  entities:
+    - number.inverter_703000387xx1_maxpwr
+    - number.inverter_703000390xx2_maxpwr
+    - number.inverter_703000387xx3_maxpwr
+  nb_inv: "{{ entities | length }}"
+  sorties_par_mppt: 2
+  pmin: 20
+  pmax: 365
+  seuil_global: 5
+  seuil_gros_conso: "{{ states('input_number.seuil_gros_conso') | float(750) }}"
+  talon_conso_maison: "{{ states('input_number.talon_conso_maison') | float(200) }}"
+  p_grid_instant: "{{ states('sensor.pvrouter_1370_power') | float(0) }}"
+  production_reelle_totale: "{{ states('sensor.shelly_production_channel_1_power') | float(0) }}"
+  pvrouter_power: "{{ states('sensor.pvrouter_1370_routed') | float(0) }}"
+  p_grid_corrige: "{{ p_grid_instant - pvrouter_power - talon_conso_maison }}"
+  p_grid_lisse: >-
+    {{
+    states('sensor.entree_pvrouter_1370_power_lissee_60s')
+    | float(p_grid_instant) }}
+  p_grid_corrige_lisse: "{{ p_grid_lisse - pvrouter_power - talon_conso_maison }}"
+  p_grid_corrige_instant: "{{ p_grid_instant - pvrouter_power - talon_conso_maison }}"
+  consignes_onduleurs: "{{ entities | map('states') | map('float', 0) | list }}"
+  consigne_totale: "{{ (consignes_onduleurs | sum) * sorties_par_mppt }}"
+  etat_eau: "{{ states('binary_sensor.dimmer_alarm_temp_d80a') }}"
+  eau_froide: "{{ etat_eau in ['off', 'normal', 'false'] }}"
+  target_routeur: 780
+  bande_routeur: 50
+  bande_grid_basse: 5
+  bande_grid_haute: 85
+  mode_eau_froide_actif: "{{ eau_froide | bool }}"
+  is_pic_actuel: |-
+    {{ (p_grid_corrige_lisse > seuil_gros_conso) and
+       (p_grid_corrige_instant > seuil_gros_conso) }}
+  is_maintien_now: >-
+    {{ (is_state('input_boolean.gros_consommateur_detecte', 'on') or
+    is_pic_actuel)
+       and trigger.id != 'timer_expire' }}
+  force_max_actif_avant: "{{ is_state('input_boolean.force_max_power_actif', 'on') }}"
+  seuil_force_max_haut: 800
+  seuil_force_max_bas: 700
+  force_max_power: |-
+    {{ is_maintien_now
+       or (p_grid_corrige > seuil_force_max_haut)
+       or (force_max_actif_avant and p_grid_corrige > seuil_force_max_bas) }}
+  sun_monte: "{{ state_attr('sun.sun', 'rising') | default(true) }}"
+  soleil_couche: "{{ state_attr('sun.sun', 'elevation') | float(0) < 0 }}"
+  production_reference: >-
+    {{ states('input_number.pv_reference_baisse') |
+    float(production_reelle_totale) }}
+  marge_baisse: 20
+  production_en_baisse: >-
+    {{ (not sun_monte) and (production_reelle_totale < (production_reference -
+    marge_baisse)) }}
+  marge_irradiance: 30
+  irradiance_limite: "{{ consigne_totale > (production_reelle_totale + marge_irradiance) }}"
+  seuil_test_periodique: 1
+  derniere_maj_onduleurs: >-
+    {{ states.number | selectattr('entity_id', 'in', entities) |
+    map(attribute='last_changed') | list | max }}
+  minutes_depuis_dernier_mouvement: "{{ (now() - (derniere_maj_onduleurs | as_datetime)).total_seconds() / 60 }}"
+  test_periodique_du: "{{ minutes_depuis_dernier_mouvement >= seuil_test_periodique }}"
+  irradiance_insuffisante: >-
+    {{ irradiance_limite and not force_max_power and p_grid_instant >=
+    bande_grid_basse and not test_periodique_du }}
+  correction_globale: |
+    {% if force_max_power %}
+      {{ (nb_inv * pmax * sorties_par_mppt) - consigne_totale }}
+    {% elif mode_eau_froide_actif %}
+      {% set ecart_routeur = target_routeur - pvrouter_power %}
+      {% if ecart_routeur | abs > bande_routeur %}
+        {% set gain = 0.6 if ecart_routeur > 0 else 1.2 %}
+        {% set raw_v = ecart_routeur * gain %}
+        {{ raw_v if raw_v | abs >= seuil_global else 0.0 }}
+      {% else %}
+        0.0
+      {% endif %}
+    {% else %}
+      {% if p_grid_instant > bande_grid_haute %}
+        {% set raw_v = (p_grid_instant - bande_grid_haute) * 0.45 %}
+        {{ raw_v if raw_v | abs >= seuil_global else 0.0 }}
+      {% elif p_grid_instant < bande_grid_basse %}
+        {% set raw_v = (p_grid_instant - bande_grid_basse) * 0.75 %}
+        {{ raw_v if raw_v | abs >= seuil_global else 0.0 }}
+      {% else %}
+        0.0
+      {% endif %}
+    {% endif %}
+  pas_max_adapt: |
+    {% if force_max_power %}
+      365
+    {% elif mode_eau_froide_actif %}
+      20
+    {% elif p_grid_instant < 0 %}
+      150
+    {% elif p_grid_instant > 150 %}
+      120
+    {% else %}
+      60
+    {% endif %}
+  per_inverter: |
+    {% if force_max_power %}
+      {{ pmax }}
+    {% else %}
+      {% set cible_totale = consigne_totale + (correction_globale | float(0)) %}
+      {% set cible_par_canal = (cible_totale / nb_inv) / sorties_par_mppt %}
+      {{ [ [ cible_par_canal | round(0), pmin ] | max, pmax ] | min }}
+    {% endif %}
+  minutes_du_jour: "{{ now().hour * 60 + now().minute }}"
+  apres_17h30: "{{ (minutes_du_jour >= 1050) or soleil_couche }}"
+  pas_de_consigne_fin_journee: >-
+    {{ apres_17h30 and ((production_reelle_totale / 6) < (per_inverter |
+    float(0))) and not force_max_power }}
