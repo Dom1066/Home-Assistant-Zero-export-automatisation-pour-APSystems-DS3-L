@@ -172,7 +172,7 @@ variables:
     marge_baisse)) }}
   marge_irradiance: 30
   irradiance_limite: "{{ consigne_totale > (production_reelle_totale + marge_irradiance) }}"
-  seuil_test_periodique: 1
+  seuil_test_periodique: 2
   derniere_maj_onduleurs: >-
     {{ states.number | selectattr('entity_id', 'in', entities) |
     map(attribute='last_changed') | list | max }}

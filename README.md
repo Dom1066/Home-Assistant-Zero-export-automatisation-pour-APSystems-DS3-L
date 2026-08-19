@@ -249,7 +249,7 @@ Réglables directement dans le YAML (`variables:`) :
 | `seuil_force_max_haut` / `seuil_force_max_bas` | 800 / 700 | Seuils d'hystérésis du mode force max |
 | `marge_baisse` | 20 | Seuil de détection de baisse de production |
 | `marge_irradiance` | 30 | Marge de tolérance pour détecter le bridage par irradiance |
-| `seuil_test_periodique` | 1 (minute) | Délai avant de forcer un recalcul |
+| `seuil_test_periodique` | 2 (minute) | Délai avant de forcer un recalcul |
 
 Réglables en direct via l'UI (sans toucher au YAML) :
 
@@ -309,5 +309,4 @@ mode: single
 ## Pistes d'amélioration
 
 - Si la détection reste trop lente pour de vrais gros consommateurs (le lissage sur 60s met du temps à monter), envisager un capteur de lissage dédié plus court (20-30s) plutôt que de retoucher `..._lissee_60s`, qui sert peut-être à d'autres automatisations.
-- Rendre `for: "00:00:08"` et la durée du `timer.gros_consommateur` pilotables via `input_number`, sur le même principe que `seuil_gros_conso`, pour ajuster sans repasser par le YAML.
-- Revoir le calcul de `test_periodique_du` : basé sur `last_changed` des entités `number`, il ne se réactive que sur un changement de valeur réel, alors que le cycle de régulation tourne toutes les 30s — en régime stable, il reste quasi en permanence à `true` et perd une partie de son utilité comme garde-fou.
+- Rendre `for: "00:00:35"` et la durée du `timer.gros_consommateur` pilotables via `input_number`, sur le même principe que `seuil_gros_conso`, pour ajuster sans repasser par le YAML.
