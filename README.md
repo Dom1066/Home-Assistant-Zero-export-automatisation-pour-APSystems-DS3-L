@@ -227,7 +227,6 @@ Hors mode `force_max_power`, la consigne par onduleur (`per_inverter`) est calcu
 
 Une commande n'est envoyée à un onduleur que si la nouvelle valeur arrondie diffère de la valeur actuelle — ce qui limite l'usure et incrémente `counter.commandes_onduleurs_jour`.
 
-> **Note de nommage** : les variables internes `consignes_onduleurs` (liste des `maxpwr` actuels des trois onduleurs) et `consigne_totale` (leur somme, pondérée par `sorties_par_mppt`) ont été nommées ainsi — plutôt que `currents`/`total_current` dans une version antérieure — pour éviter toute confusion : il ne s'agit jamais d'une mesure de courant électrique, mais bien des consignes de puissance actuellement en vigueur sur les onduleurs.
 
 ## Cas particuliers
 

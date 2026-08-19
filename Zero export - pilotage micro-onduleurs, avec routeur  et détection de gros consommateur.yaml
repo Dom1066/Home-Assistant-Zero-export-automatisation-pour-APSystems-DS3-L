@@ -21,7 +21,7 @@ triggers:
           - states('sensor.pvrouter_1370_routed') | float(0)
           - states('input_number.talon_conso_maison') | float(200))
          > states('input_number.seuil_gros_conso') | float(750) }}
-    for: "00:00:08"
+    for: "00:00:35"
     id: pic_instant
   - trigger: event
     event_type: timer.finished
