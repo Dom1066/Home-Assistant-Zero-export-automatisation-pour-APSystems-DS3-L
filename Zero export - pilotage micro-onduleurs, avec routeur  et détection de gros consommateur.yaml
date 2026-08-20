@@ -45,7 +45,8 @@ actions:
         value_template: >
           {{ states('sensor.pvrouter_1370_power') not in
           ['unknown','unavailable',none]
-             and states('sensor.shelly_production_channel_1_power') not in ['unknown','unavailable',none] }}
+             and states('sensor.shelly_production_channel_1_power') not in ['unknown','unavailable',none]
+             and states('sensor.pvrouter_1370_routed') not in ['unknown','unavailable',none] }}
     then:
       - if:
           - condition: template
@@ -126,7 +127,6 @@ variables:
   p_grid_instant: "{{ states('sensor.pvrouter_1370_power') | float(0) }}"
   production_reelle_totale: "{{ states('sensor.shelly_production_channel_1_power') | float(0) }}"
   pvrouter_power: "{{ states('sensor.pvrouter_1370_routed') | float(0) }}"
-  p_grid_corrige: "{{ p_grid_instant - pvrouter_power - talon_conso_maison }}"
   p_grid_lisse: >-
     {{ states('sensor.entree_pvrouter_1370_power_lissee_60s') |
     float(p_grid_instant) }}
@@ -153,8 +153,8 @@ variables:
   seuil_force_max_bas: 700
   force_max_power: |-
     {{ is_maintien_now
-        or (p_grid_corrige > seuil_force_max_haut)
-        or (force_max_actif_avant and p_grid_corrige > seuil_force_max_bas) }}
+        or (p_grid_corrige_instant > seuil_force_max_haut)
+        or (force_max_actif_avant and p_grid_corrige_instant > seuil_force_max_bas) }}
   sun_monte: "{{ state_attr('sun.sun', 'rising') | default(true) }}"
   soleil_couche: "{{ state_attr('sun.sun', 'elevation') | float(0) < 0 }}"
   production_reference: >-

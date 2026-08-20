@@ -212,8 +212,8 @@ Tant que ce booléen est `on` (ou qu'un pic est en cours), la variable `is_maint
 Quand `force_max_power` est vrai, tous les onduleurs sont poussés à leur puissance maximale (`pmax`), sans calcul fin de régulation. Ce mode s'active si :
 
 - un gros consommateur est en cours de maintien (`is_maintien_now`), **ou**
-- `p_grid_corrige` dépasse `seuil_force_max_haut` (800 W), **ou**
-- le mode était déjà actif et `p_grid_corrige` reste au-dessus de `seuil_force_max_bas` (700 W) — c'est l'**hystérésis** : elle évite un battement rapide on/off si la puissance oscille autour d'un seul seuil.
+- `p_grid_corrige_instant` dépasse `seuil_force_max_haut` (800 W), **ou**
+- le mode était déjà actif et `p_grid_corrige_instant` reste au-dessus de `seuil_force_max_bas` (700 W) — c'est l'**hystérésis** : elle évite un battement rapide on/off si la puissance oscille autour d'un seul seuil.
 
 ## Calcul de la consigne par onduleur
 
@@ -232,7 +232,8 @@ Une commande n'est envoyée à un onduleur que si la nouvelle valeur arrondie di
 
 - **`production_en_baisse`** : en fin de journée (soleil descendant), si la production chute de plus de 20 W (`marge_baisse`) sous son pic mémorisé, la stratégie de régulation change pour viser la bande grid classique plutôt que le routeur, afin d'anticiper la baisse de ressource.
 - **`irradiance_insuffisante`** : si la somme des consignes actuellement appliquées aux onduleurs (`consigne_totale`) dépasse largement (+30 W) la production réelle, c'est le signe qu'ils sont bridés par manque d'irradiance plutôt que par la régulation — dans ce cas, on n'ajuste pas la consigne (elle ne servirait à rien), sauf test périodique.
-- **`test_periodique_du`** : si aucun onduleur n'a été ajusté depuis au moins 2 minute, on force un cycle de recalcul même en cas d'irradiance insuffisante, pour ne pas rester bloqué indéfiniment sur une ancienne consigne.
+- **`test_periodique_du`** : si aucun onduleur n'a été ajusté depuis au moins 2 minutes, on force un cycle de recalcul même en cas d'irradiance insuffisante, pour ne pas rester bloqué indéfiniment sur une ancienne consigne.
+- **Garde de disponibilité des capteurs** : aucun ajustement n'est envoyé aux onduleurs tant que `sensor.pvrouter_1370_power`, `sensor.shelly_production_channel_1_power` ou `sensor.pvrouter_1370_routed` sont à `unknown`/`unavailable`. Ce dernier capteur a été ajouté à la garde suite à un risque identifié : sans cette vérification, une perte du capteur de puissance routée était silencieusement interprétée comme `0 W routé` (à cause du repli `| float(0)` sur `pvrouter_power`). En mode eau froide, cela pouvait pousser la régulation à augmenter la puissance des onduleurs en croyant que le routeur avait besoin de plus de surplus à dériver, alors qu'il ne fonctionnait peut-être plus pour l'absorber — un scénario propice à l'export réseau, contraire à l'objectif même de l'automatisation.
 - **`pas_de_consigne_fin_journee`** : après 17h30 (ou soleil couché), si la production réelle est faible comparée à la consigne courante par onduleur, on n'envoie plus de nouvelle consigne (évite de solliciter les onduleurs pour rien en fin de journée).
 
 ## Variables de réglage
@@ -249,7 +250,7 @@ Réglables directement dans le YAML (`variables:`) :
 | `seuil_force_max_haut` / `seuil_force_max_bas` | 800 / 700 | Seuils d'hystérésis du mode force max |
 | `marge_baisse` | 20 | Seuil de détection de baisse de production |
 | `marge_irradiance` | 30 | Marge de tolérance pour détecter le bridage par irradiance |
-| `seuil_test_periodique` | 2 (minute) | Délai avant de forcer un recalcul |
+| `seuil_test_periodique` | 2 (minutes) | Délai avant de forcer un recalcul |
 
 Réglables en direct via l'UI (sans toucher au YAML) :
 
