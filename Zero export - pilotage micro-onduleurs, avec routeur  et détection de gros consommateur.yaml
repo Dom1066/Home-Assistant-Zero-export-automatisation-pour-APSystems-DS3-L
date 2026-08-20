@@ -8,13 +8,14 @@ triggers:
   - trigger: time_pattern
     seconds: /30
   - trigger: template
-    value_template: |-
-      {{ (states('sensor.pvrouter_1370_power') | float(0)
-          - states('sensor.pvrouter_1370_routed') | float(0)
-          - states('input_number.talon_conso_maison') | float(200))
-         > states('input_number.seuil_gros_conso') | float(750) }}
-    for: "00:00:35"
     id: pic_instant
+    value_template: >
+      {% set p_grid = states('sensor.pvrouter_1370_power') | float(0) %} {% set
+      routed = states('sensor.pvrouter_1370_routed') | float(0) %} {% set talon
+      = states('input_number.talon_conso_maison') | float(200) %} {% set seuil =
+      states('input_number.seuil_gros_conso') | float(750) %} {{ (p_grid -
+      routed - talon) > seuil }}
+    for: "00:00:30"
   - trigger: event
     event_type: timer.finished
     event_data:
@@ -48,11 +49,11 @@ actions:
     then:
       - if:
           - condition: template
-            value_template: |-
-              {{ (trigger.id == 'pic_instant'
-                  and states('p_grid_corrige_instant') | float(0) > states('seuil_gros_conso') | float(0)
-                  and states('p_grid_corrige_lisse') | float(0) > states('seuil_gros_conso') | float(0))
-                or (is_state('input_boolean.gros_consommateur_detecte', 'on') and is_pic_actuel) }}
+            value_template: >
+              {% set is_trigger_pic = (trigger.id == 'pic_instant') %} {% set
+              est_deja_detecte =
+              is_state('input_boolean.gros_consommateur_detecte', 'on') %} {{
+              is_trigger_pic or (est_deja_detecte and is_pic_actuel) }}
         then:
           - action: timer.start
             target:
@@ -146,14 +147,14 @@ variables:
   is_maintien_now: >-
     {{ (is_state('input_boolean.gros_consommateur_detecte', 'on') or
     is_pic_actuel)
-       and trigger.id != 'timer_expire' }}
+        and trigger.id != 'timer_expire' }}
   force_max_actif_avant: "{{ is_state('input_boolean.force_max_power_actif', 'on') }}"
   seuil_force_max_haut: 800
   seuil_force_max_bas: 700
   force_max_power: |-
     {{ is_maintien_now
-       or (p_grid_corrige > seuil_force_max_haut)
-       or (force_max_actif_avant and p_grid_corrige > seuil_force_max_bas) }}
+        or (p_grid_corrige > seuil_force_max_haut)
+        or (force_max_actif_avant and p_grid_corrige > seuil_force_max_bas) }}
   sun_monte: "{{ state_attr('sun.sun', 'rising') | default(true) }}"
   soleil_couche: "{{ state_attr('sun.sun', 'elevation') | float(0) < 0 }}"
   production_reference: >-

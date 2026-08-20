@@ -161,21 +161,21 @@ counter:
 | id | Déclencheur | Rôle |
 |---|---|---|
 | *(sans id)* | `time_pattern` toutes les 30s | Boucle de régulation normale |
-| `pic_instant` | Template : `p_grid - pvrouter - talon > seuil_gros_conso`, maintenu 8s | Détection réactive d'un pic de consommation |
+| `pic_instant` | Template : `p_grid - pvrouter - talon > seuil_gros_conso`, maintenu 30s | Détection réactive d'un pic de consommation |
 | `timer_expire` | `timer.finished` sur `timer.gros_consommateur` | Fin du maintien de l'état gros consommateur |
 
 ## Logique de détection des gros consommateurs
 
-Le trigger `pic_instant` se déclenche quand la puissance nette (compteur moins ce qui est routé vers le chauffe-eau, moins le talon de base) dépasse `seuil_gros_conso` de façon **continue pendant 8 secondes**.
+Le trigger `pic_instant` se déclenche quand la puissance nette (compteur moins ce qui est routé vers le chauffe-eau, moins le talon de base) dépasse `seuil_gros_conso` de façon **continue pendant 30 secondes**.
 
 La confirmation distingue ensuite deux cas — **l'entrée en détection** et le **maintien** — pour rester réactive au démarrage tout en ne s'interrompant pas pendant une charge longue :
 
 ```jinja
-{{ (trigger.id == 'pic_instant' and p_grid_corrige_instant > seuil_gros_conso)
+{{ (trigger.id == 'pic_instant')
    or (is_state('input_boolean.gros_consommateur_detecte', 'on') and is_pic_actuel) }}
 ```
 
-- **Entrée en détection** : `trigger.id == 'pic_instant' and p_grid_corrige_instant > seuil_gros_conso`. Se déclenche dès que le trigger `pic_instant` se déclenche (8s de dépassement continu sur le signal brut) — pas d'attente supplémentaire sur la valeur lissée.
+- **Entrée en détection** : `trigger.id == 'pic_instant'`. Se déclenche dès que le trigger `pic_instant` se déclenche — c'est-à-dire après 30s de dépassement continu du seuil sur le signal brut, cette condition étant déjà intégrée au trigger lui-même (`for: "00:00:30"`). Il n'y a donc pas de re-vérification du seuil dans l'action, ni d'attente supplémentaire sur la valeur lissée.
 - **Maintien** : `is_state('input_boolean.gros_consommateur_detecte', 'on') and is_pic_actuel`. Réévalué à **chaque cycle** (tous les 30s via `time_pattern`, ou plus tôt), tant que la détection est déjà active et qu'`is_pic_actuel` (qui combine instantané ET lissé, voir ci-dessous) reste vrai.
 
 Dans les deux cas, l'action relance :
@@ -232,7 +232,7 @@ Une commande n'est envoyée à un onduleur que si la nouvelle valeur arrondie di
 
 - **`production_en_baisse`** : en fin de journée (soleil descendant), si la production chute de plus de 20 W (`marge_baisse`) sous son pic mémorisé, la stratégie de régulation change pour viser la bande grid classique plutôt que le routeur, afin d'anticiper la baisse de ressource.
 - **`irradiance_insuffisante`** : si la somme des consignes actuellement appliquées aux onduleurs (`consigne_totale`) dépasse largement (+30 W) la production réelle, c'est le signe qu'ils sont bridés par manque d'irradiance plutôt que par la régulation — dans ce cas, on n'ajuste pas la consigne (elle ne servirait à rien), sauf test périodique.
-- **`test_periodique_du`** : si aucun onduleur n'a été ajusté depuis au moins 1 minute, on force un cycle de recalcul même en cas d'irradiance insuffisante, pour ne pas rester bloqué indéfiniment sur une ancienne consigne.
+- **`test_periodique_du`** : si aucun onduleur n'a été ajusté depuis au moins 2 minute, on force un cycle de recalcul même en cas d'irradiance insuffisante, pour ne pas rester bloqué indéfiniment sur une ancienne consigne.
 - **`pas_de_consigne_fin_journee`** : après 17h30 (ou soleil couché), si la production réelle est faible comparée à la consigne courante par onduleur, on n'envoie plus de nouvelle consigne (évite de solliciter les onduleurs pour rien en fin de journée).
 
 ## Variables de réglage
@@ -309,4 +309,4 @@ mode: single
 ## Pistes d'amélioration
 
 - Si la détection reste trop lente pour de vrais gros consommateurs (le lissage sur 60s met du temps à monter), envisager un capteur de lissage dédié plus court (20-30s) plutôt que de retoucher `..._lissee_60s`, qui sert peut-être à d'autres automatisations.
-- Rendre `for: "00:00:35"` et la durée du `timer.gros_consommateur` pilotables via `input_number`, sur le même principe que `seuil_gros_conso`, pour ajuster sans repasser par le YAML.
+- Rendre `for: "00:00:30"` et la durée du `timer.gros_consommateur` pilotables via `input_number`, sur le même principe que `seuil_gros_conso`, pour ajuster sans repasser par le YAML.
