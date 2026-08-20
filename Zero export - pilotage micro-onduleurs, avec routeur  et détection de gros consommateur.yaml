@@ -113,9 +113,9 @@ mode: restart
 max_exceeded: silent
 variables:
   entities:
-    - number.inverter_703000387398_maxpwr
-    - number.inverter_703000390009_maxpwr
-    - number.inverter_703000387936_maxpwr
+    - number.inverter_703000387xx1_maxpwr
+    - number.inverter_703000390xx2_maxpwr
+    - number.inverter_703000387xx3_maxpwr
   nb_inv: "{{ entities | length }}"
   sorties_par_mppt: 2
   pmin: 20
