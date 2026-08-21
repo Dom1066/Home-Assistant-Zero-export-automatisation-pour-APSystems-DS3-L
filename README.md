@@ -35,7 +35,6 @@ L'automatisation suppose l'existence préalable de ces entités dans Home Assist
 | `number.inverter_703000390xx2_maxpwr` | Consigne de puissance max, onduleur 2 |
 | `number.inverter_703000387xx3_maxpwr` | Consigne de puissance max, onduleur 3 |
 | `sensor.pvrouter_1370_power` | Puissance instantanée au compteur (import/export réseau) |
-| `sensor.entree_pvrouter_1370_power_lissee_60s` | Version lissée sur 60s du capteur ci-dessus — **capteur à créer** (voir ci-dessous), ce n'est pas fourni par une intégration |
 | `sensor.shelly_production_channel_1_power` | Production PV instantanée |
 | `sensor.pvrouter_1370_routed` | Puissance actuellement routée vers le chauffe-eau par le pv-routeur |
 | `binary_sensor.dimmer_alarm_temp_d80a` | État "eau froide / eau chaude" du chauffe-eau |
@@ -46,6 +45,8 @@ L'automatisation suppose l'existence préalable de ces entités dans Home Assist
 | `input_boolean.force_max_power_actif` | Bascule indiquant que le mode "puissance max forcée" est actif — **à créer** (voir ci-dessous), ce n'est pas fourni par une intégration  |
 | `timer.gros_consommateur` | Minuteur de maintien de l'état "gros consommateur détecté" — **à créer** (voir ci-dessous), ce n'est pas fourni par une intégration  |
 | `counter.commandes_onduleurs_jour` | Compteur du nombre de commandes envoyées aux onduleurs — **à créer** (voir ci-dessous), ce n'est pas fourni par une intégration  |
+
+> **Note** : la détection de gros consommateur se base uniquement sur la puissance **instantanée** au compteur (`sensor.pvrouter_1370_power`). Le capteur lissé qui était auparavant utilisé en complément (`sensor.entree_pvrouter_1370_power_lissee_60s`) n'est plus nécessaire pour cette automatisation et n'a donc plus besoin d'être créé.
 
 ### Configuration des entités à créer
 
@@ -62,30 +63,8 @@ Les capteurs (`sensor.*`) et le `binary_sensor.*` dépendent de tes intégration
 | Référence PV baisse | Nombre (`input_number`) | `input_number.pv_reference_baisse` | Min : `0` — Max : `10000` *(à adapter à la puissance crête de ton installation)* — Pas : `1` — Unité : `W` — Valeur initiale : `0` |
 | Gros consommateur détecté | Interrupteur (`input_boolean`) | `input_boolean.gros_consommateur_detecte` | Aucune option particulière — état initial `off` |
 | Force max power actif | Interrupteur (`input_boolean`) | `input_boolean.force_max_power_actif` | Aucune option particulière — état initial `off` |
-| Minuteur gros consommateur | Minuteur (`timer`) | `timer.gros_consommateur` | Durée par défaut : `00:04:10` (réécrite dynamiquement par l'automatisation à chaque déclenchement, cette valeur ne sert que de valeur de repli) |
+| Minuteur gros consommateur | Minuteur (`timer`) | `timer.gros_consommateur` | Durée : `00:04:10` — l'automatisation ne passe pas de `duration` dans ses appels `timer.start`, c'est donc cette valeur configurée sur le helper qui s'applique à chaque (re)démarrage du minuteur |
 | Compteur commandes onduleurs | Compteur (`counter`) | `counter.commandes_onduleurs_jour` | Pas : `1` — Valeur initiale : `0` — Minimum : `0` |
-
-**Cas particulier : `sensor.entree_pvrouter_1370_power_lissee_60s`** — ce n'est pas un *helper* mais un **capteur dérivé**, à créer séparément puisqu'aucune intégration ne le fournit. La plateforme `filter` ne peut pas être configurée via l'UI (contrairement aux *Aides*) : elle doit être déclarée directement dans `configuration.yaml`, sous la clé `sensor:` :
-
-```yaml
-sensor:
-  - platform: filter
-    name: "entree_pvrouter_1370_power_lissee_60s"
-    entity_id: sensor.pvrouter_1370_power
-    filters:
-      - filter: outlier
-        window_size: 4
-        radius: 50
-      - filter: lowpass
-        time_constant: 4
-        precision: 1
-```
-
-Ce capteur applique deux filtres en série :
-- **`outlier`** : ignore une valeur si elle s'écarte de plus de `radius` (50 W) de la moyenne des `window_size` (4) dernières valeurs — élimine les mesures aberrantes ponctuelles.
-- **`lowpass`** : lissage exponentiel avec une constante de temps de `4` (secondes), arrondi à `1` décimale — atténue les variations rapides tout en suivant les tendances réelles.
-
-> **Important — l'`entity_id` généré doit correspondre à celui attendu par l'automatisation principale.** Avec ce `name: "entree_pvrouter_1370_power_lissee_60s"`, Home Assistant génère par défaut `sensor.entree_pvrouter_1370_power_lissee_60s`, ce qui correspond exactement à la référence utilisée dans le YAML de l'automatisation principale (variable `p_grid_lisse`) — aucun renommage manuel n'est donc nécessaire ici. Après ajout dans `configuration.yaml`, un redémarrage de Home Assistant est tout de même nécessaire (ce type de capteur ne se recharge pas via *Recharger la configuration*) — vérifie ensuite l'`entity_id` réel dans **Outils de développement → États** pour confirmer qu'il correspond bien.
 
 **Équivalent en YAML** pour les *helpers* manuels ci-dessus, à placer dans `configuration.yaml` (ou dans les fichiers `input_number.yaml` / `input_boolean.yaml` / `timer.yaml` / `counter.yaml` si tu utilises des `!include`) :
 
@@ -150,8 +129,8 @@ counter:
 
 À chaque exécution (toutes les 30s, ou sur détection d'un pic, ou à l'expiration du minuteur), l'automatisation :
 
-1. Met à jour la bascule `force_max_power_actif` selon le calcul `force_max_power`.
-2. Détecte un éventuel pic de gros consommateur et démarre le minuteur de maintien si besoin.
+1. Détecte un éventuel pic de gros consommateur et démarre le minuteur de maintien si besoin.
+2. Met à jour la bascule `force_max_power_actif` selon le calcul `force_max_power`.
 3. Met à jour la référence de production PV si celle-ci progresse.
 4. Décide s'il faut ou non ajuster les onduleurs ce cycle-ci (pour économiser des commandes inutiles).
 5. Si oui, calcule la nouvelle consigne par onduleur et l'envoie, avec un pas d'ajustement limité (`pas_max_adapt`) pour éviter les à-coups.
@@ -160,9 +139,11 @@ counter:
 
 | id | Déclencheur | Rôle |
 |---|---|---|
-| *(sans id)* | `time_pattern` toutes les 30s | Boucle de régulation normale |
+| `reglage_periodique` | `time_pattern` toutes les 30s | Boucle de régulation normale |
 | `pic_instant` | Template : `p_grid - pvrouter - talon > seuil_gros_conso`, maintenu 30s | Détection réactive d'un pic de consommation |
 | `timer_expire` | `timer.finished` sur `timer.gros_consommateur` | Fin du maintien de l'état gros consommateur |
+
+> **Note** : `reglage_periodique` n'est référencé nulle part explicitement dans les conditions de l'action (`choose` ne teste que `pic_instant` et `timer_expire`) — il sert uniquement à déclencher la boucle de régulation à intervalle régulier. Lui donner un id explicite reste néanmoins recommandé : ça évite de dépendre d'un id positionnel implicite (attribué par Home Assistant selon l'ordre dans la liste `triggers:`), qui pourrait changer silencieusement si l'ordre des triggers est modifié — par exemple via l'éditeur visuel de l'UI, qui réécrit parfois le bloc `triggers:` en entier à la sauvegarde. Un id nommé facilite aussi la lecture des exécutions dans l'onglet **Traces**.
 
 ## Logique de détection des gros consommateurs
 
@@ -175,8 +156,8 @@ La confirmation distingue ensuite deux cas — **l'entrée en détection** et le
    or (is_state('input_boolean.gros_consommateur_detecte', 'on') and is_pic_actuel) }}
 ```
 
-- **Entrée en détection** : `trigger.id == 'pic_instant'`. Se déclenche dès que le trigger `pic_instant` se déclenche — c'est-à-dire après 30s de dépassement continu du seuil sur le signal brut, cette condition étant déjà intégrée au trigger lui-même (`for: "00:00:30"`). Il n'y a donc pas de re-vérification du seuil dans l'action, ni d'attente supplémentaire sur la valeur lissée.
-- **Maintien** : `is_state('input_boolean.gros_consommateur_detecte', 'on') and is_pic_actuel`. Réévalué à **chaque cycle** (tous les 30s via `time_pattern`, ou plus tôt), tant que la détection est déjà active et qu'`is_pic_actuel` (qui combine instantané ET lissé, voir ci-dessous) reste vrai.
+- **Entrée en détection** : `trigger.id == 'pic_instant'`. Se déclenche dès que le trigger `pic_instant` se déclenche — c'est-à-dire après 30s de dépassement continu du seuil sur le signal brut, cette condition étant déjà intégrée au trigger lui-même (`for: "00:00:30"`). Il n'y a donc pas de re-vérification du seuil dans l'action, ni d'attente supplémentaire.
+- **Maintien** : `is_state('input_boolean.gros_consommateur_detecte', 'on') and is_pic_actuel`. Réévalué à **chaque cycle** (tous les 30s via `reglage_periodique`, ou plus tôt), tant que la détection est déjà active et qu'`is_pic_actuel` (voir ci-dessous) reste vrai.
 
 Dans les deux cas, l'action relance :
 
@@ -184,8 +165,6 @@ Dans les deux cas, l'action relance :
 - action: timer.start
   target:
     entity_id: timer.gros_consommateur
-  data:
-    duration: "00:04:10"
 - action: input_boolean.turn_on
   target:
     entity_id: input_boolean.gros_consommateur_detecte
@@ -193,13 +172,14 @@ Dans les deux cas, l'action relance :
 
 **Pourquoi ce découpage** : avant ce correctif, seule l'entrée en détection redémarrait le timer, et uniquement sur le flanc du trigger `pic_instant` (qui ne se redéclenche pas tant que sa condition reste vraie en continu). Résultat : si un gros consommateur tournait plus longtemps que la durée du timer (4 min 10s) sans redescendre sous le seuil entre-temps, le timer expirait **pendant que l'appareil tournait encore**, coupant la détection en plein milieu. Désormais, tant que `gros_consommateur_detecte` est `on` et que `is_pic_actuel` reste vrai, le timer est relancé à chaque cycle de 30s — il ne peut plus expirer prématurément pendant une charge continue.
 
-`is_pic_actuel` sert de garde-fou anti-bruit pour le *maintien* (il combine l'instantané et le lissé sur 60s) :
+`is_pic_actuel` sert de garde-fou pour le *maintien*. Il repose uniquement sur la puissance **instantanée** :
 
 ```jinja
 is_pic_actuel: |-
-  {{ (p_grid_corrige_lisse > seuil_gros_conso) and
-     (p_grid_corrige_instant > seuil_gros_conso) }}
+  {{ p_grid_corrige_instant > seuil_gros_conso }}
 ```
+
+> Auparavant, `is_pic_actuel` exigeait en plus que la puissance **lissée sur 60s** (`p_grid_corrige_lisse`, dérivée de `sensor.entree_pvrouter_1370_power_lissee_60s`) dépasse elle aussi le seuil. Cette double condition a été retirée : le lissage introduisait un délai de réaction lors de baisses ponctuelles de charge (le maintien restait actif quelques secondes de trop après l'arrêt réel du gros consommateur, ou inversement retardait la fin de la détection), et le capteur lissé dédié n'est donc plus requis par cette automatisation (voir [Entités requises](#entités-requises)).
 
 Une fois confirmé (entrée ou maintien) :
 - `timer.gros_consommateur` (re)démarre pour 4 min 10s,
@@ -220,10 +200,10 @@ Quand `force_max_power` est vrai, tous les onduleurs sont poussés à leur puiss
 Hors mode `force_max_power`, la consigne par onduleur (`per_inverter`) est calculée à partir de :
 
 1. **`correction_globale`** : un delta de puissance totale à appliquer, dont le calcul dépend du contexte :
-   - **Eau froide** : la correction vise à ramener la puissance routée vers le chauffe-eau (`pvrouter_power`) vers `target_routeur` (780 W), avec une bande morte de ±50 W (`bande_routeur`) et un gain asymétrique (0.6 à la baisse, 1.2 à la hausse).
+   - **Eau froide** : la correction vise à ramener la puissance routée vers le chauffe-eau (`pvrouter_power`) vers `target_routeur` (780 W), avec une bande morte de ±50 W (`bande_routeur`) et un gain asymétrique — **0.6 quand il faut augmenter** la puissance des onduleurs (le routeur reçoit moins que la cible), **1.2 quand il faut la diminuer** (trop de puissance routée par rapport à la cible).
    - **Eau chaude** : la correction vise à ramener `p_grid_instant` dans une bande de 5 à 85 W (`bande_grid_basse` / `bande_grid_haute`).
 2. Cette correction globale s'ajoute à `consigne_totale` — la somme des consignes (`maxpwr`) actuellement appliquées aux trois onduleurs, multipliée par le nombre de sorties par MPPT (`sorties_par_mppt`). Le résultat est réparti également entre les onduleurs, puis borné entre `pmin` (20) et `pmax` (365).
-3. L'ajustement effectif appliqué est limité par **`pas_max_adapt`**, qui varie selon le contexte (jusqu'à 365 en mode forcé, aussi bas que 20 en mode eau froide pour ne pas déstabiliser le routeur, 150 si export, 120 si forte consommation, 60 sinon).
+3. L'ajustement effectif appliqué est limité par **`pas_max_adapt`**, qui varie selon le contexte (jusqu'à 365 en mode forcé, aussi bas que 20 en mode eau froide pour ne pas déstabiliser le routeur, 150 si export, 120 si forte consommation, 65 sinon).
 
 Une commande n'est envoyée à un onduleur que si la nouvelle valeur arrondie diffère de la valeur actuelle — ce qui limite l'usure et incrémente `counter.commandes_onduleurs_jour`.
 
@@ -264,7 +244,7 @@ Réglables en direct via l'UI (sans toucher au YAML) :
 1. Créer au préalable toutes les [entités requises](#entités-requises) qui n'existeraient pas déjà (`input_number`, `input_boolean`, `timer`, `counter`).
 2. Dans Home Assistant : **Paramètres → Automatisations et scènes → Créer une automatisation → ⋮ → Modifier en YAML**.
 3. Coller le contenu de `Zero_export_pilotage_onduleurs.yaml`.
-4. Enregistrer, puis vérifier dans l'onglet **Traces** que le trigger `time_pattern` s'exécute bien toutes les 30s sans erreur.
+4. Enregistrer, puis vérifier dans l'onglet **Traces** que le trigger `reglage_periodique` s'exécute bien toutes les 30s sans erreur.
 
 ## Automatisation complémentaire : réinitialisation de minuit
 
@@ -309,5 +289,5 @@ mode: single
 
 ## Pistes d'amélioration
 
-- Si la détection reste trop lente pour de vrais gros consommateurs (le lissage sur 60s met du temps à monter), envisager un capteur de lissage dédié plus court (20-30s) plutôt que de retoucher `..._lissee_60s`, qui sert peut-être à d'autres automatisations.
+- Si la détection reste trop sensible au bruit ponctuel maintenant qu'elle repose uniquement sur l'instantané, envisager de réintroduire un lissage très court (quelques secondes) dédié à cette seule automatisation, plutôt que de dépendre d'un capteur lissé partagé avec d'autres usages.
 - Rendre `for: "00:00:30"` et la durée du `timer.gros_consommateur` pilotables via `input_number`, sur le même principe que `seuil_gros_conso`, pour ajuster sans repasser par le YAML.
