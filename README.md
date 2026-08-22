@@ -57,7 +57,7 @@ Les capteurs physiques (`sensor.pvrouter_1370_power`, `sensor.shelly_production_
 
 En revanche, `sensor.entree_pvrouter_1370_power_lissee_60s` n'est pas fourni par une intégration : c'est un capteur `filter` **dérivé** de `sensor.pvrouter_1370_power`, à déclarer explicitement en YAML (plateforme `filter`, pas de configuration possible via l'UI) :
 
-```yaml
+```
 sensor:
   - platform: filter
     name: "entree_pvrouter_1370_power_lissee_60s"
@@ -70,7 +70,6 @@ sensor:
         time_constant: 4
         precision: 1
 ```
-
 
 - À placer dans `configuration.yaml`
 - Après ajout, redémarre Home Assistant ou recharge les entités **Filtre** via **Outils de développement → YAML → Recharger la configuration**, sinon `sensor.entree_pvrouter_1370_power_lissee_60s` restera `unknown` et `p_grid_lisse` retombera sur l'instantané (voir la note plus haut sur ce repli).
@@ -179,7 +178,7 @@ Elle exige que **à la fois** la puissance nette lissée sur 60s (`p_grid_corrig
 
 La branche de détection dans le `choose` est :
 
-```yaml
+```
 - conditions:
     - condition: template
       value_template: "{{ is_pic_actuel }}"

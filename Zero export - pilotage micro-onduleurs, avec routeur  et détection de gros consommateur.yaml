@@ -114,7 +114,7 @@ variables:
   seuil_global: 5
   seuil_gros_conso: "{{ states('input_number.seuil_gros_conso') | float(750) }}"
   talon_conso_maison: "{{ states('input_number.talon_conso_maison') | float(200) }}"
-  p_grid_instant: "{{ states('sensor.pvrouter_1370_power') | float(0) }}"
+  p_grid_instant: "{{ states('sensor.pvrouter_1370_power_1370') | float(0) }}"
   production_reelle_totale: "{{ states('sensor.shelly_production_channel_1_power') | float(0) }}"
   pvrouter_power: "{{ states('sensor.pvrouter_1370_routed') | float(0) }}"
   p_grid_lisse: >-
