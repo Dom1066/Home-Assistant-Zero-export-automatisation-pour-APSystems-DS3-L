@@ -7,32 +7,13 @@ description: >-
 triggers:
   - trigger: time_pattern
     seconds: /30
-    id: reglage_periodique
-  - trigger: template
-    id: pic_instant
-    value_template: >
-      {% set p_grid = states('sensor.pvrouter_1370_power') | float(0) %}  {% set
-      routed = states('sensor.pvrouter_1370_routed') | float(0) %}  {% set talon
-      = states('input_number.talon_conso_maison') | float(200) %}  {% set seuil
-      = states('input_number.seuil_gros_conso') | float(750) %}  {{ (p_grid -
-      routed - talon) > seuil }}
-    for: "00:00:30"
+    id: verification_periodique
   - trigger: event
     event_type: timer.finished
     event_data:
       entity_id: timer.gros_consommateur
     id: timer_expire
 actions:
-  - if:
-      - condition: template
-        value_template: "{{ is_pic_actuel }}"
-    then:
-      - action: input_boolean.turn_on
-        target:
-          entity_id: input_boolean.gros_consommateur_detecte
-      - action: timer.start
-        target:
-          entity_id: timer.gros_consommateur
   - choose:
       - conditions:
           - condition: trigger
@@ -42,20 +23,18 @@ actions:
             target:
               entity_id: input_boolean.gros_consommateur_detecte
       - conditions:
-          - condition: trigger
-            id: pic_instant
+          - condition: template
+            value_template: "{{ is_pic_actuel }}"
         sequence:
           - action: input_boolean.turn_on
             target:
               entity_id: input_boolean.gros_consommateur_detecte
-          - if:
-              - condition: state
-                entity_id: timer.gros_consommateur
-                state: idle
-            then:
-              - action: timer.start
-                target:
-                  entity_id: timer.gros_consommateur
+          - condition: state
+            entity_id: timer.gros_consommateur
+            state: idle
+          - action: timer.start
+            target:
+              entity_id: timer.gros_consommateur
   - if:
       - condition: template
         value_template: "{{ force_max_power }}"
@@ -72,8 +51,8 @@ actions:
         value_template: >
           {{ states('sensor.pvrouter_1370_power') not in
           ['unknown','unavailable',none]
-             and states('sensor.shelly_production_channel_1_power') not in ['unknown','unavailable',none]
-             and states('sensor.pvrouter_1370_routed') not in ['unknown','unavailable',none] }}
+              and states('sensor.shelly_production_channel_1_power') not in ['unknown','unavailable',none]
+              and states('sensor.pvrouter_1370_routed') not in ['unknown','unavailable',none] }}
     then:
       - if:
           - condition: template
@@ -125,9 +104,9 @@ mode: restart
 max_exceeded: silent
 variables:
   entities:
-    - number.inverter_703000387xx1_maxpwr
-    - number.inverter_703000390xx2_maxpwr
-    - number.inverter_703000387xx3_maxpwr
+    - number.inverter_703000387398_maxpwr
+    - number.inverter_703000390009_maxpwr
+    - number.inverter_703000387936_maxpwr
   nb_inv: "{{ entities | length }}"
   sorties_par_mppt: 2
   pmin: 20
@@ -138,21 +117,27 @@ variables:
   p_grid_instant: "{{ states('sensor.pvrouter_1370_power') | float(0) }}"
   production_reelle_totale: "{{ states('sensor.shelly_production_channel_1_power') | float(0) }}"
   pvrouter_power: "{{ states('sensor.pvrouter_1370_routed') | float(0) }}"
+  p_grid_lisse: >-
+    {{ states('sensor.entree_pvrouter_1370_power_lissee_60s') |
+    float(p_grid_instant) }}
+  p_grid_corrige_lisse: "{{ p_grid_lisse - pvrouter_power - talon_conso_maison }}"
   p_grid_corrige_instant: "{{ p_grid_instant - pvrouter_power - talon_conso_maison }}"
   consignes_onduleurs: "{{ entities | map('states') | map('float', 0) | list }}"
   consigne_totale: "{{ (consignes_onduleurs | sum) * sorties_par_mppt }}"
   etat_eau: "{{ states('binary_sensor.dimmer_alarm_temp_d80a') }}"
   eau_froide: "{{ etat_eau in ['off', 'normal', 'false'] }}"
-  target_routeur: 780
-  bande_routeur: 50
+  target_routeur: 760
+  bande_routeur: 100
   bande_grid_basse: 5
   bande_grid_haute: 85
   mode_eau_froide_actif: "{{ eau_froide | bool }}"
-  is_pic_actuel: "{{ p_grid_corrige_instant > seuil_gros_conso }}"
+  is_pic_actuel: |-
+    {{ (p_grid_corrige_lisse > seuil_gros_conso) and
+        (p_grid_corrige_instant > seuil_gros_conso) }}
   is_maintien_now: >-
-    {% set tid = trigger.id | default('none') if trigger is defined else 'none'
-    %} {{ is_state('input_boolean.gros_consommateur_detecte', 'on') and tid !=
-    'timer_expire' }}
+    {{ (is_state('input_boolean.gros_consommateur_detecte', 'on') or
+    is_pic_actuel)
+        and trigger.id != 'timer_expire' }}
   force_max_actif_avant: "{{ is_state('input_boolean.force_max_power_actif', 'on') }}"
   seuil_force_max_haut: 800
   seuil_force_max_bas: 700
